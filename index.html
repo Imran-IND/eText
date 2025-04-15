@@ -1,0 +1,426 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Text Extractor</title>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/tesseract.js/5.1.0/tesseract.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.min.mjs" type="module"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;600;700&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            font-family: 'Inter', sans-serif;
+            margin: 0;
+            display: flex;
+            flex-direction: column;
+            min-height: 100vh;
+        }
+
+        #output {
+            font-family: 'Courier New', Courier, monospace;
+        }
+
+        #main-content {
+            display: flex;
+            flex-direction: column;
+            flex: 1;
+            justify-content: center;
+            align-items: center;
+            background: white;
+            overflow-y: auto;
+        }
+
+        .content-wrapper {
+            display: flex;
+            flex-direction: row;
+            justify-content: center;
+            align-items: flex-start;
+            max-width: 96rem;
+            width: 100%;
+            margin: 2rem 0 1rem 0;
+            gap: 2rem;
+        }
+
+        .content-container {
+            max-width: 48rem;
+            width: 100%;
+            background: white;
+            border-radius: 0;
+            padding: 2rem;
+        }
+
+        .output-container {
+            max-width: 48rem;
+            width: 100%;
+            background: white;
+            border-radius: 0;
+            padding: 2rem;
+            display: block;
+        }
+
+        .progress-container {
+            position: relative;
+            width: 100%;
+            height: 3.5rem;
+            display: flex;
+            flex-direction: column;
+            justify-content: center;
+        }
+
+        progress {
+            width: 100%;
+            height: 1.5rem;
+            border-radius: 0.5rem;
+            background-color: #e5e7eb;
+            position: absolute;
+            bottom: 0;
+            appearance: none;
+        }
+
+        progress::-webkit-progress-bar {
+            background-color: #e5e7eb;
+            border-radius: 0.5rem;
+        }
+
+        progress::-webkit-progress-value {
+            background-color: #10b981;
+            border-radius: 0.5rem;
+            transition: width 0.3s ease-in-out;
+        }
+
+        progress::-moz-progress-bar {
+            background-color: #10b981;
+            border-radius: 0.5rem;
+        }
+
+        #progress-text {
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            text-align: left;
+            font-size: 0.875rem;
+            color: #4b5563;
+        }
+
+        #progress-percentage {
+            position: absolute;
+            top: 2.0rem;
+            left: 50%;
+            transform: translateX(-50%);
+            font-size: 0.9rem;
+            font-weight: 600;
+            color: #000000;
+            text-shadow: 0 1px 2px rgba(255, 255, 255, 0.3);
+            line-height: 1.5rem;
+        }
+
+        footer {
+            background: linear-gradient(135deg, #1e40af, #3b82f6);
+            color: white;
+            padding: 1.5rem;
+            text-align: center;
+            border-top: 4px solid #10b981;
+            width: 100%;
+            border-radius: 0;
+            margin: 0;
+            position: sticky;
+            bottom: 0;
+        }
+
+        footer p {
+            margin: 0;
+            font-size: 0.9rem;
+            font-weight: 500;
+            color: white;
+        }
+
+        @media (max-width: 1024px) {
+            .content-wrapper {
+                flex-direction: column;
+                align-items: center;
+                gap: 1rem;
+            }
+            .output-container {
+                max-width: 48rem;
+                width: 100%;
+            }
+        }
+    </style>
+</head>
+<body class="flex">
+    <div id="main-content" class="flex flex-col">
+        <div class="content-wrapper">
+            <div class="content-container">
+                <h2 class="text-3xl font-bold text-gray-800 mb-4">eText</h2>
+                <p class="text-gray-600 mb-6">Upload an image or PDF to extract text in English, Bengali, Assamese, or Hindi.</p>
+                <input type="file" id="fileInput" accept="image/*,application/pdf" multiple class="block w-full text-sm text-gray-500 file:mr-4 file:py-2 file:px-4 file:rounded-full file:border-0 file:text-sm file:font-semibold file:bg-indigo-50 file:text-indigo-700 hover:file:bg-indigo-100 mb-6">
+                <div class="flex space-x-4">
+                    <button id="extractBtn" class="bg-indigo-600 text-white px-6 py-2 rounded-full font-semibold hover:bg-indigo-700 transition disabled:bg-gray-400 disabled:cursor-not-allowed">Extract Text</button>
+                    <button id="clearBtn" class="bg-red-500 text-white px-6 py-2 rounded-full font-semibold hover:bg-red-600 transition">Clear</button>
+                </div>
+                <div id="progress-container" class="mt-6">
+                    <div class="progress-container">
+                        <div id="progress-text" class="text-gray-600 text-sm italic"></div>
+                        <progress id="progress-bar" value="0" max="100"></progress>
+                        <span id="progress-percentage">0%</span>
+                    </div>
+                </div>
+                <div id="error" class="mt-4 text-red-600"></div>
+                <canvas id="canvas" class="hidden"></canvas>
+            </div>
+            <div class="output-container" id="output-container">
+                <div class="flex justify-between items-center mb-4">
+                    <h3 class="text-xl font-semibold text-gray-800">Extracted Text</h3>
+                    <button id="copyBtn" class="bg-gray-400 text-white px-4 py-2 rounded-full font-semibold cursor-not-allowed" disabled>Copy Text</button>
+                </div>
+                <div id="output" class="p-4 bg-gray-50 border border-gray-200 rounded-lg max-h-96 overflow-y-auto whitespace-pre-wrap"></div>
+            </div>
+        </div>
+    </div>
+    <footer>
+        <p>Designed and Developed by<br>Hussain Muhammad Imran<br>District Consultant, ILRMS<br>Cachar</p>
+    </footer>
+
+    <script type="module">
+        // INSTRUCTIONS: Obfuscate this script at https://obfuscator.io, replace below with obfuscated code
+        // Set PDF.js worker source
+        pdfjsLib.GlobalWorkerOptions.workerSrc = 'https://cdnjs.cloudflare.com/ajax/libs/pdf.js/4.7.76/pdf.worker.min.mjs';
+
+        const fileInput = document.getElementById('fileInput');
+        const extractBtn = document.getElementById('extractBtn');
+        const clearBtn = document.getElementById('clearBtn');
+        const copyBtn = document.getElementById('copyBtn');
+        const outputDiv = document.getElementById('output');
+        const outputContainer = document.getElementById('output-container');
+        const progressText = document.getElementById('progress-text');
+        const progressBar = document.getElementById('progress-bar');
+        const progressPercentage = document.getElementById('progress-percentage');
+        const errorDiv = document.getElementById('error');
+        const canvas = document.getElementById('canvas');
+        const ctx = canvas.getContext('2d');
+
+        // Initialize Tesseract worker
+        let worker;
+        async function initWorker() {
+            try {
+                worker = await Tesseract.createWorker('eng+ben+asm+hin', 1, {
+                    logger: m => {
+                        if (m.status === 'recognizing text' && currentFileProgress) {
+                            const ocrProgress = m.progress * 50;
+                            const totalFileProgress = currentFileBaseProgress + ocrProgress;
+                            updateProgress(totalFileProgress / totalFiles);
+                            progressText.textContent = `Processing ${currentFileName} (OCR: ${Math.round(m.progress * 100)}%)`;
+                        }
+                    },
+                    errorHandler: err => {
+                        console.error('Tesseract error:', err);
+                        errorDiv.textContent = 'OCR processing error. Please try again.';
+                    }
+                });
+            } catch (err) {
+                console.error('Worker initialization failed:', err);
+                errorDiv.textContent = 'Failed to initialize text extraction. Please refresh the page.';
+            }
+        }
+
+        // Load worker on page load
+        initWorker();
+
+        let totalFiles = 0;
+        let processedFiles = 0;
+        let currentFileProgress = 0;
+        let currentFileBaseProgress = 0;
+        let currentFileName = '';
+        let totalPages = 0;
+
+        function updateProgress(fileProgress) {
+            const overallProgress = (processedFiles / totalFiles + fileProgress / totalFiles) * 100;
+            progressBar.value = Math.min(overallProgress, 100);
+            progressPercentage.textContent = `${Math.round(progressBar.value)}%`;
+        }
+
+        function clearForm() {
+            fileInput.value = '';
+            outputDiv.textContent = '';
+            copyBtn.disabled = true;
+            copyBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            copyBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'cursor-pointer');
+            errorDiv.textContent = '';
+            progressText.textContent = '';
+            progressBar.value = 0;
+            progressPercentage.textContent = '0%';
+            extractBtn.disabled = false;
+        }
+
+        extractBtn.addEventListener('click', async () => {
+            const files = fileInput.files;
+            if (!files.length) {
+                errorDiv.textContent = 'Please select at least one file.';
+                return;
+            }
+
+            if (!worker) {
+                errorDiv.textContent = 'Text extraction not ready. Please refresh the page.';
+                return;
+            }
+
+            outputDiv.textContent = '';
+            copyBtn.disabled = true;
+            copyBtn.classList.add('bg-gray-400', 'cursor-not-allowed');
+            copyBtn.classList.remove('bg-blue-600', 'hover:bg-blue-700', 'cursor-pointer');
+            errorDiv.textContent = '';
+            progressText.textContent = 'Starting extraction...';
+            progressBar.value = 0;
+            progressPercentage.textContent = '0%';
+            extractBtn.disabled = true;
+            let extractedText = '';
+
+            try {
+                totalFiles = files.length;
+                processedFiles = 0;
+
+                for (let file of files) {
+                    currentFileName = file.name;
+                    currentFileProgress = 0;
+                    currentFileBaseProgress = 0;
+                    progressText.textContent = `Processing ${currentFileName}...`;
+
+                    if (file.type === 'application/pdf') {
+                        extractedText += await processPDF(file);
+                    } else if (file.type.startsWith('image/')) {
+                        extractedText += await processImage(file);
+                    }
+                    processedFiles++;
+                    updateProgress(0);
+                }
+
+                outputDiv.textContent = extractedText || 'No text extracted.';
+                if (extractedText) {
+                    copyBtn.disabled = false;
+                    copyBtn.classList.remove('bg-gray-400', 'cursor-not-allowed');
+                    copyBtn.classList.add('bg-blue-600', 'hover:bg-blue-700', 'cursor-pointer');
+                }
+            } catch (err) {
+                console.error('Extraction error:', err);
+                errorDiv.textContent = `Extraction failed: ${err.message}. Please try again.`;
+            } finally {
+                progressText.textContent = 'Processing complete.';
+                progressBar.value = 100;
+                progressPercentage.textContent = '100%';
+                extractBtn.disabled = false;
+            }
+        });
+
+        copyBtn.addEventListener('click', async () => {
+            const text = outputDiv.textContent;
+            if (text) {
+                try {
+                    const permissionStatus = await navigator.permissions.query({ name: 'clipboard-write' });
+                    if (permissionStatus.state === 'granted' || permissionStatus.state === 'prompt') {
+                        await navigator.clipboard.writeText(text);
+                        alert('Text copied to clipboard!');
+                    } else {
+                        errorDiv.textContent = 'Clipboard access denied. Please copy the text manually from the output box.';
+                    }
+                } catch (err) {
+                    console.error('Clipboard error:', err);
+                    errorDiv.textContent = 'Failed to copy text to clipboard. Please copy manually from the output box.';
+                }
+            }
+        });
+
+        clearBtn.addEventListener('click', () => {
+            clearForm();
+        });
+
+        async function processImage(file) {
+            progressText.textContent = `Processing image: ${file.name}`;
+            try {
+                const img = await loadImage(file);
+                canvas.width = img.width;
+                canvas.height = img.height;
+                ctx.drawImage(img, 0, 0);
+
+                currentFileBaseProgress = 50;
+                updateProgress(currentFileBaseProgress / 100);
+                const result = await worker.recognize(canvas);
+                return `--- Image: ${file.name} ---\n${result.data.text}\n\n`;
+            } catch (err) {
+                console.error('Image processing error:', err);
+                return `--- Image: ${file.name} ---\nError processing image: ${err.message}\n\n`;
+            }
+        }
+
+        async function processPDF(file) {
+            progressText.textContent = `Loading PDF: ${file.name}`;
+            let text = `--- PDF: ${file.name} ---\n`;
+            try {
+                const arrayBuffer = await file.arrayBuffer();
+                const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                totalPages = pdf.numPages;
+
+                for (let i = 1; i <= pdf.numPages; i++) {
+                    progressText.textContent = `Processing PDF: ${file.name} (Page ${i}/${pdf.numPages})`;
+                    try {
+                        const page = await pdf.getPage(i);
+                        const viewport = page.getViewport({ scale: 2.0 });
+
+                        canvas.width = viewport.width;
+                        canvas.height = viewport.height;
+
+                        await page.render({
+                            canvasContext: ctx,
+                            viewport: viewport
+                        }).promise;
+
+                        currentFileBaseProgress = 25 * (i / pdf.numPages);
+                        updateProgress(currentFileBaseProgress / 100);
+
+                        const result = await worker.recognize(canvas);
+                        text += `--- Page ${i} ---\n${result.data.text}\n\n`;
+                    } catch (err) {
+                        console.error(`Page ${i} processing error:`, err);
+                        text += `--- Page ${i} ---\nError processing page: ${err.message}\n\n`;
+                    }
+                }
+            } catch (err) {
+                console.error('PDF processing error:', err);
+                text += `Error processing PDF: ${err.message}\n\n`;
+            }
+            return text;
+        }
+
+        function loadImage(file) {
+            return new Promise((resolve, reject) => {
+                const img = new Image();
+                img.onload = () => {
+                    URL.revokeObjectURL(img.src);
+                    resolve(img);
+                };
+                img.onerror = () => reject(new Error('Failed to load image'));
+                img.src = URL.createObjectURL(file);
+            });
+        }
+
+        // Clean up worker on page unload
+        window.addEventListener('beforeunload', () => {
+            if (worker) worker.terminate();
+        });
+    </script>
+    <script>
+        // Disable right-click and inspection shortcuts
+        document.addEventListener('contextmenu', e => e.preventDefault());
+        document.addEventListener('keydown', e => {
+            if (e.key === 'F12' || 
+                (e.ctrlKey && e.shiftKey && e.key === 'I') || 
+                (e.ctrlKey && e.key === 'u')) {
+                e.preventDefault();
+            }
+        });
+        // Warn against copying
+        console.log('This code is proprietary. Unauthorized copying is prohibited.');
+    </script>
+</body>
+</html>
